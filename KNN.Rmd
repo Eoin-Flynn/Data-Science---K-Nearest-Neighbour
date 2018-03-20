@@ -25,6 +25,9 @@ dataScienceReport = T
 knitr::opts_chunk$set(echo = dataScienceReport, tidy.opts=list(width.cutoff=60),tidy=TRUE)
 ```
 
+#Introduction
+In this report we will build upon the information gathered from our decision tree and logistic regression models to
+
 ```{r Functions Text, results='asis', echo=F, include=dataScienceReport}
 cat("#Functions
     This section will hold all of the functions that will be used throughout this markdown.")
