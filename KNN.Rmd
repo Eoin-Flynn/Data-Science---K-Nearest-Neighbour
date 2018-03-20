@@ -1,0 +1,379 @@
+---
+title: "K Nearest"
+author: "Eoin Flynn"
+date: "18 March 2018"
+output: pdf_document
+header-includes:
+- \usepackage{pdflscape}
+- \newcommand{\blandscape}{\begin{landscape}}
+- \newcommand{\elandscape}{\end{landscape}}
+
+---
+
+\centering
+Bond University\linebreak
+Data Science
+
+
+\raggedright
+\clearpage
+\tableofcontents
+\clearpage
+
+```{r setup, include=FALSE}
+dataScienceReport = T
+knitr::opts_chunk$set(echo = dataScienceReport, tidy.opts=list(width.cutoff=60),tidy=TRUE)
+```
+
+```{r Functions Text, results='asis', echo=F, include=dataScienceReport}
+cat("#Functions
+    This section will hold all of the functions that will be used throughout this markdown.")
+```
+```{r Functions Code}
+# Change rows to factors
+setRowAsFactor <- function(dataset, columns){
+  for (column in columns){
+    dataset[,column] <- as.factor(dataset[,column])
+  }
+  return(dataset)
+}
+
+
+
+# Get the models predictions
+getPredictions <- function(model, dataset, outcomeColumn, type="prob"){
+  suppressMessages(library(ROCR))
+  
+  probability <- as.numeric(predict(model, newdata = customerDataset, type = "prob")[,2])
+  predictions <- prediction(probability, outcomeColumn)
+  
+  return(predictions)
+}
+
+# Get the model AUC and return it
+getModelAUC <- function(model, dataset, outcomeColumn, type = "prob"){
+  suppressMessages(library(ROCR))
+
+  
+  
+  prediction <- getPredictions(model = model, dataset = dataset, outcomeColumn = outcomeColumn)
+  auc <- performance(prediction, "auc")@y.values
+  
+  
+  return(auc)
+}
+
+
+# Plot ROC curves
+plotROCCurves <- function(model1Prediction, model2Prediction, main, 
+                          model1Colour = "#009900", model2Colour = "#FF8000", 
+                          model1Name, model2Name, legendLocation = "bottomright"){
+  suppressMessages(library(ROCR))
+
+  model1Performance <- performance(model1Prediction, "tpr", "fpr")
+  model2Performance <- performance(model2Prediction, "tpr", "fpr")
+  
+  plot(model1Performance, main = main, col = model1Colour, print.auc=TRUE)
+  plot(model2Performance, add = T, col = model2Colour)
+  legend(legendLocation, legend=paste(rep(c(model1Name,model2Name))),col=c(model1Colour, model2Colour),
+         cex=0.8,fill=c(model1Colour, model2Colour))
+}
+
+# Calculate AUC. Returns as a decimal
+getAUC <- function(outcomeColumn, dataset, model, oneClass, zeroClass){
+  suppressMessages(library(ModelMetrics))
+  prediction_df <- createPrediction_df(model, dataset, oneClass = oneClass, zeroClass = zeroClass)
+  auc <- auc(outcomeColumn, prediction_df$classification)
+  
+  return(auc)
+}
+
+# Create a confusion matrix. Returns a confusion matrix
+createConfusionMatrix <- function(model, dataset, outcomeColumn, oneClass, zeroClass){
+  suppressMessages(library(caret))
+  prediction_df <- createPrediction_df(model, dataset, oneClass = oneClass, zeroClass = zeroClass)
+  userConfusionMatrix <- table(prediction_df$classification, outcomeColumn)
+  
+  return(userConfusionMatrix)
+}
+
+# Create a new customer for predicition. Returns a dataframe
+createCustomer <- function(originalDataset, gender, SeniorCitizen, Partner, Dependents, tenure, PhoneService, MultipleLines, InternetService, OnlineSecurity,
+                           OnlineBackup, DeviceProtection, TechSupport, StreamingTV, StreamingMovies, Contract, PaperlessBilling, PaymentMethod, MontlyCharges,
+                           TotalCharges, Churn){
+  # Create a copy of the original dataset and keep one row that will be overridden with the new data.
+  newCustomer <- customerDataset[1,]
+  
+  newCustomer$gender <- gender
+  newCustomer$SeniorCitizen <- SeniorCitizen
+  newCustomer$Partner<- Partner
+  newCustomer$Dependents <- Dependents
+  newCustomer$tenure <- tenure
+  newCustomer$PhoneService <- PhoneService
+  newCustomer$MultipleLines <- MultipleLines
+  newCustomer$InternetService <- InternetService
+  newCustomer$OnlineSecurity <- OnlineSecurity
+  newCustomer$OnlineBackup <- OnlineBackup
+  newCustomer$DeviceProtection <- DeviceProtection
+  newCustomer$TechSupport <- TechSupport
+  newCustomer$StreamingTV <- StreamingTV
+  newCustomer$StreamingMovies <- StreamingMovies
+  newCustomer$Contract <- Contract
+  newCustomer$PaperlessBilling <- PaperlessBilling
+  newCustomer$PaymentMethod <- PaymentMethod
+  newCustomer$MonthlyCharges <- MontlyCharges
+  newCustomer$TotalCharges <- TotalCharges
+  newCustomer$Churn <- Churn
+  
+  # Convert fields that are factors
+  newCustomer <- setRowAsFactor(newCustomer, c("gender", "SeniorCitizen", "Partner", "Dependents", "PhoneService",
+                                                     "MultipleLines", "InternetService", "OnlineSecurity", "OnlineBackup",
+                                                     "DeviceProtection","TechSupport", "StreamingTV", "StreamingMovies",
+                                                     "Contract", "PaperlessBilling", "PaymentMethod", "Churn"
+                                                     ))
+  
+  return(newCustomer)
+}
+
+# Gets a dataframe from a locally hosted MySQL server. Returns a dataframe
+loadDataframeFromMySQL <- function(user, password, host = "localhost", dbname, statement, port = 3306){
+  suppressMessages(library(RMySQL))
+  
+  # Connect to the server
+  dataBase <- dbConnect(MySQL(), user = user, password = password, host = host, dbname = dbname, port = port)
+  # Retrieve the info the from the specified server
+  dataframe <- dbGetQuery(dataBase, statement = statement)
+  # Close the connection to the server
+  dbDisconnect(dataBase)
+  
+  return(dataframe)
+  
+}
+
+# Returns a predictive model
+predictiveModel <- function(formula, dataset, method, neighbours = 1:10, metric = "Accuracy", trControl){
+  suppressMessages(library(caret))
+  model <- train(formula, data=dataset, method = method, tuneGrid=expand.grid(.k=neighbours), 
+                 metric = metric, trControl = trControl)
+  
+  return(model)
+}
+
+# Returns a train control object to be fed into a predictive model
+trainControlObject <- function(method = "repeatedcv", number = 10, repeats){
+  suppressMessages(library(caret))
+  object <- trainControl(method = method, number = number, repeats = repeats)
+  
+  return(object)
+}
+
+# Create and return a dataframe of the classifications and their probabilities
+createPrediction_df <- function(model, dataset, predictionType = "prob", oneClass, zeroClass){
+  # Run the prediction
+  prediction<- suppressWarnings(predict(model, dataset, type = predictionType))
+  # Convert to a dataframe
+  prediction_df <- data.frame(prediction)
+  # Rename the column to reference easier
+  colnames(prediction_df) <- c("NegativeProb", "PositiveProb")
+  # Add a row for the classification
+  prediction_df$classification <- rep(zeroClass,nrow(prediction_df))
+  # Convert all probabilites above 0.5 to be the affirmative class
+  prediction_df$classification[prediction_df$PositiveProb > 0.5] <- oneClass
+  prediction_df$classification <- as.factor(prediction_df$classification)
+  
+  
+  return(prediction_df)
+}
+
+# Calculate the accuracy of accurately predicting yes
+getYesAccuracy <- function(confusionMatrix, asDecimal = F){
+  accuracy <- confusionMatrix[2,2]/(confusionMatrix[2,1]+confusionMatrix[2,2])
+  if(asDecimal){
+    return(accuracy)
+  }
+  else{
+    return(accuracy*100)
+  }
+}
+```
+
+
+```{r Load Data Text, results='asis', echo=F, include=dataScienceReport}
+cat("#Data
+In this section we will load in our data and do some basic data exploration.")
+```
+```{r Load Data Code, include=dataScienceReport}
+customerDataset <- loadDataframeFromMySQL(user="root", password = "A13337995", 
+                                          dbname = "world", statement = "Select * from world.customerChurn")
+
+# Loop through and change all relevant rows to factors and returns the dataset post modification
+customerDataset <- setRowAsFactor(customerDataset, c("gender", "SeniorCitizen", "Partner", "Dependents", "PhoneService",
+                                                     "MultipleLines", "InternetService", "OnlineSecurity", "OnlineBackup",
+                                                     "DeviceProtection","TechSupport", "StreamingTV", "StreamingMovies",
+                                                     "Contract", "PaperlessBilling", "PaymentMethod", "Churn"
+                                                     ))
+
+# Drop the columns that will not be needed
+customerDataset <- customerDataset[, -which(names(customerDataset) %in% c("customerID"))]
+
+
+```
+
+```{r Model Text, results='asis', echo=F, include=dataScienceReport}
+cat("#Model
+We will create two models, one using all variables from the customer dataset, the other using the top three variables outlined in our decision tree paper. The top three variables are the type on contract, the type of internet service, and the customer's tenure. We will test our models between 3 and 45 neighbours as 1 and 2 neighbours typically have little value and more than 45 may make the model prone to overfitting. After the models have been created we will examine their overall accuracy and how accurate they are when they predict that a customer will churn. Once we have established which model has the greatest accuracy for the business's intended use we will examine if any other number of neighbours close to the one chosen by R would provide a better model for the intended use case.")
+```
+
+```{r Model Creation Text, results='asis', echo=F, include=dataScienceReport}
+cat("##Model Creation
+We will now create out two models and explore their results.")
+```
+```{r Model Creation Code, include=dataScienceReport}
+library(caret)
+set.seed(12216)
+
+
+allVariableModel <- predictiveModel(formula = Churn~., dataset = customerDataset, method = "knn",
+                         neighbours = 3:45, trControl = trainControlObject(repeats = 5))
+
+topThreeModel <- predictiveModel(formula = Churn~Contract+InternetService+tenure, dataset = customerDataset, method = "knn",
+                         neighbours = 3:45, trControl = trainControlObject(repeats = 5))
+allVariableModel
+topThreeModel
+
+plot(allVariableModel, main = "All Variable Model")
+plot(topThreeModel, main = "Top Three Model")
+```
+```{r Model Creation Results, results='asis', echo=F, include=dataScienceReport}
+cat("###Model Outputs  
+We can see that each model uses a largely different value of K. Where the All Variable Model uses only 24 neighbours to achieve it's peak accuracy, model 2 uses 40. The plots demonstrate the increases and decreases in accuracy with the change in the number of neighbours.
+")
+```
+
+```{r Model Comparison Text, results='asis', echo=F, include=dataScienceReport}
+cat("##Model Comparison  
+The two models produce similar guideline accuracy results being withing 2% of one another however the best strategy for testing their true accuracy is to create an AUC curve and compare the results.
+")
+```
+```{r Model Comparison Code, include=dataScienceReport}
+# Create the prediction statistics that are used to plot the AUC
+model1Predicitions <- getPredictions(allVariableModel, customerDataset, customerDataset$Churn)
+model2Predicitions <- getPredictions(topThreeModel, customerDataset, customerDataset$Churn)
+
+# Calculate the AUC for each model
+allVariableModelAUC <- as.numeric(getModelAUC(model = allVariableModel, dataset = customerDataset, 
+                                   outcomeColumn = customerDataset$Churn, type = "prob"))
+topThreeModelAUC <- as.numeric(getModelAUC(model = topThreeModel, dataset = customerDataset, 
+                                   outcomeColumn = customerDataset$Churn, type = "prob"))
+
+# Plot the ROC curves on the same graph for comparison
+plotROCCurves(model1Prediction = model1Predicitions, model2Prediction = model2Predicitions, main = "Model Comparison", 
+              model1Name = sprintf("All Variable Model. AUC %.2f%%", allVariableModelAUC*100), 
+              model2Name = sprintf("Top Three Model. AUC %.2f%%", topThreeModelAUC*100))
+
+# Create a confusion matrix for each model
+model1ConfusionMatrix <- createConfusionMatrix(allVariableModel, customerDataset, customerDataset$Churn, 
+                                               oneClass = "Yes", zeroClass = "No")
+
+model2ConfusionMatrix <- createConfusionMatrix(topThreeModel, customerDataset, customerDataset$Churn, 
+                                               oneClass = "Yes", zeroClass = "No")
+model1ConfusionMatrix
+model2ConfusionMatrix
+
+# Calculate the difference in the AUC
+aucDifference <- (topThreeModelAUC-allVariableModelAUC)*100
+
+# Accuracy of the yes predictions
+model1YesAccuracy <- getYesAccuracy(model1ConfusionMatrix)
+model2YesAccuracy <- getYesAccuracy(model2ConfusionMatrix)
+
+```
+```{r Model Comparison Results, results='asis', echo=F, include=dataScienceReport}
+cat(sprintf("###Model Comparison Results       
+Looking at the model's AUC we can see that the top three model is still the most accurate overall, beating the all variable model by %.2f%%. Where the top three model begins to faulter is how accurately it predidicts yes as it is only accurate %.2f%% where the All Variable Model is correct when it predicts that a customer will churn %.2f%%. Given that the main use case for this model will be to accurately predict that someone will churn, the All Variable Model will be the one we will attempt to further optimise and then present to management.
+", aucDifference, model2YesAccuracy, model1YesAccuracy))
+```
+
+```{r Model Optimisation Text, results='asis', echo=F, include=dataScienceReport}
+cat("The model KNN model produced by R gives the optimal number of neighours for the best overall accuracy, however we are only interested in the accuracy of the yes predicitions. We will now see if changing the number of neighbours within a range of three on either side of the optimal number produced by R will improve our accuracy.")
+```
+```{r Model Optimisation Code, include=dataScienceReport}
+# Loop through a range of values and print their yes accuracy
+for(neighbours in 21:27){
+  model <- predictiveModel(formula = Churn~., dataset = customerDataset, method = "knn",
+                         neighbours = neighbours, trControl = trainControlObject(repeats = 5))
+  confusionMatrix <- createConfusionMatrix(model, customerDataset, customerDataset$Churn, 
+                                               oneClass = "Yes", zeroClass = "No")
+  yesAccuracy <- getYesAccuracy(confusionMatrix)
+  print(sprintf("The accuracy of %s neighbours is %.2f%%.", neighbours, yesAccuracy))
+}
+```
+```{r Model Optimisation Results, results='asis', echo=F, include=dataScienceReport}
+cat("###Model Optimisation Results       
+The results so us that increasing the number of neighbours to 26 marginally increases the accuracy of the yes predictions therefore that is the model that we will be presenting to management.
+")
+```
+
+#Model
+```{r Final Model}
+# A collection of all results related to the final model that can be referenced in the dicussion below
+# This code chunk does not print any values
+finalModel <- predictiveModel(formula = Churn~., dataset = customerDataset, method = "knn",
+                         neighbours = 26, trControl = trainControlObject(repeats = 5))
+finalModelPredicitions <- getPredictions(finalModel, customerDataset, customerDataset$Churn)
+finalModelPerformance <- performance(finalModelPredicitions, "tpr", "fpr")
+finalModelAUC <- as.numeric(getModelAUC(model = finalModel, dataset = customerDataset, 
+                                   outcomeColumn = customerDataset$Churn, type = "prob"))
+# Not printed but used in the yes accuracy
+finalModelConfusionMatrix <- createConfusionMatrix(finalModel, customerDataset, customerDataset$Churn, 
+                                               oneClass = "Yes", zeroClass = "No")
+finalModelYesAccuracy <- getYesAccuracy(finalModelConfusionMatrix)
+```
+
+```{r Final Model Discussion, results='asis', echo=F}
+cat(sprintf("       
+After developing a series of K-nearest neighbour models we were able to create a baseline model and optimise it to best fit its intended use case. As you can see from the ROC plot below, the model has an overall accuracy of %.2f%%, but more importantly the accuracy of the model's yes predictions is %.2f%%.
+", finalModelAUC*100, finalModelYesAccuracy))
+```
+```{r Final Model ROC Plot, include=dataScienceReport}
+plot(finalModelPerformance, main = "Model ROC", col = "#009900", print.auc=TRUE)
+legend("bottomright", legend=paste(rep(sprintf("AUC %.2f%%", finalModelAUC*100))),col="#009900",
+         cex=0.8,fill="#009900")
+```
+
+If we create a dummy customer we can test to see whether they will churn.
+```{r Dummy Customer}
+# Create a new customer
+newCustomer <- createCustomer(customerDataset, 
+                              gender = "Male", 
+                              SeniorCitizen = 0, 
+                              Partner = "Yes", 
+                              Dependents = "No", 
+                              tenure = 1, 
+                              PhoneService = "Yes",
+                              MultipleLines = "No", 
+                              InternetService = "Fiber optic",
+                              OnlineSecurity = "No",
+                              OnlineBackup = "No",
+                              DeviceProtection = "No",
+                              TechSupport = "No",
+                              StreamingTV = "Yes",
+                              StreamingMovies = "Yes",
+                              Contract = "Month-to-month",
+                              PaperlessBilling = "Yes",
+                              PaymentMethod = "Bank transfer (automatic)",
+                              MontlyCharges = 34.5,
+                              TotalCharges = 34.5,
+                              Churn = "Yes"
+                              )
+finalModelPredicition <- createPrediction_df(finalModel, newCustomer, oneClass = "Yes", zeroClass = "No")
+
+```
+```{r Dummy Customer Discussion, results='asis', echo=F}
+cat(sprintf("       
+The model predicts that a male who has a one year tenure and has a fibre optic internet service will churn, and based on the results from our testing we can say that with a %.2f%% chance of being correct.
+",finalModelYesAccuracy))
+```
+
+#Conclusion  
+Given the model's accuracy when it predicts that a customer will churn, we can advise that this model should be used in everyday business operations. There may be parameters outside of thos provided in the dataset which would improve the accuracy of the model but that can be visited at a later time. For now this model will work for its intended business use.
