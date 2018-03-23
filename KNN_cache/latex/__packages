@@ -1,0 +1,10 @@
+base
+RevoUtilsMath
+RevoUtils
+DBI
+RMySQL
+lattice
+ggplot2
+caret
+gplots
+ROCR

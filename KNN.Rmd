@@ -21,7 +21,7 @@ Data Science
 \clearpage
 
 ```{r setup, include=FALSE}
-dataScienceReport = T
+dataScienceReport = F
 knitr::opts_chunk$set(echo = dataScienceReport, tidy.opts=list(width.cutoff=60),tidy=TRUE)
 ```
 
@@ -80,15 +80,6 @@ plotROCCurves <- function(model1Prediction, model2Prediction, main,
   plot(model2Performance, add = T, col = model2Colour)
   legend(legendLocation, legend=paste(rep(c(model1Name,model2Name))),col=c(model1Colour, model2Colour),
          cex=0.8,fill=c(model1Colour, model2Colour))
-}
-
-# Calculate AUC. Returns as a decimal
-getAUC <- function(outcomeColumn, dataset, model, oneClass, zeroClass){
-  suppressMessages(library(ModelMetrics))
-  prediction_df <- createPrediction_df(model, dataset, oneClass = oneClass, zeroClass = zeroClass)
-  auc <- auc(outcomeColumn, prediction_df$classification)
-  
-  return(auc)
 }
 
 # Create a confusion matrix. Returns a confusion matrix
@@ -232,8 +223,8 @@ We will create two models, one using all variables from the customer dataset, th
 cat("##Model Creation
 We will now create our two models and explore their results.")
 ```
-```{r Model Creation Code, include=dataScienceReport}
-library(caret)
+```{r Model Creation Code, include=dataScienceReport, cache=TRUE}
+suppressMessages(library(caret))
 set.seed(12216)
 
 
@@ -249,8 +240,8 @@ plot(allVariableModel, main = "All Variable Model")
 plot(topThreeModel, main = "Top Three Model")
 ```
 ```{r Model Creation Results, results='asis', echo=F, include=dataScienceReport}
-cat("###Model Outputs  
-We can see that each model uses a largely different value of K. Where the All Variable Model uses only 24 neighbours to achieve it's peak accuracy, the Top Three Variable model uses 40. The plots show the increases and decreases in accuracy with the change in the number of neighbours for each model.
+cat("###Model Outputs    
+We can see that each model uses a largely different value of K. Where the All Variable Model uses only 25 neighbours to achieve it's peak accuracy, the Top Three Variable model uses 40. The plots show the increases and decreases in accuracy with the change in the number of neighbours for each model.
 ")
 ```
 
@@ -302,9 +293,9 @@ Looking at the model's AUC we can see that the top three model is still the most
 cat("##Model Optimisation  
 The model KNN model produced by R gives the optimal number of neighours for the best overall accuracy, however we are only interested in the accuracy of the yes predicitions. We will now see if changing the number of neighbours within a range of three on either side of the optimal number produced by R will improve our accuracy.")
 ```
-```{r Model Optimisation Code, include=dataScienceReport}
+```{r Model Optimisation Code, include=dataScienceReport, cache=TRUE}
 # Loop through a range of values and print their yes accuracy
-for(neighbours in 21:27){
+for(neighbours in 22:28){
   model <- predictiveModel(formula = Churn~., dataset = customerDataset, method = "knn",
                          neighbours = neighbours, trControl = trainControlObject(repeats = 5))
   confusionMatrix <- createConfusionMatrix(model, customerDataset, customerDataset$Churn, 
@@ -320,7 +311,7 @@ The results so us that increasing the number of neighbours to 26 marginally incr
 ```
 
 #Model
-```{r Final Model}
+```{r Final Model, cache=TRUE}
 # A collection of all results related to the final model that can be referenced in the dicussion below
 # This code chunk does not print any values
 finalModel <- predictiveModel(formula = Churn~., dataset = customerDataset, method = "knn",
@@ -337,17 +328,18 @@ finalModelYesAccuracy <- getYesAccuracy(finalModelConfusionMatrix)
 
 ```{r Final Model Discussion, results='asis', echo=F}
 cat(sprintf("       
-After developing a series of K-nearest neighbour models we were able to create a baseline model and optimise it to best fit its intended use case. As you can see from the ROC plot below, the model has an overall accuracy of %.2f%%, but more importantly the accuracy of the model's yes predictions is %.2f%%.
+After developing a series of K-nearest neighbour models we were able to create a baseline model and optimise it to best fit its intended use case. As you can see from the ROC plot below, the model has an overall accuracy of %.2f%%, but more importantly the accuracy of the model's yes predictions are %.2f%%. The model did produce 288 false positives but a misclassification that small should be of no real convern considering how accurate the model is at predicting yes all other times. 
+ 
 ", finalModelAUC*100, finalModelYesAccuracy))
 ```
-```{r Final Model ROC Plot, include=dataScienceReport}
+```{r Final Model ROC Plot, include=TRUE}
 plot(finalModelPerformance, main = "Model ROC", col = "#009900", print.auc=TRUE)
 legend("bottomright", legend=paste(rep(sprintf("AUC %.2f%%", finalModelAUC*100))),col="#009900",
          cex=0.8,fill="#009900")
 ```
 
 If we create a dummy customer we can test to see whether they will churn.
-```{r Dummy Customer}
+```{r Dummy Customer, include=TRUE}
 # Create a new customer
 newCustomer <- createCustomer(customerDataset, 
                               gender = "Male", 
@@ -372,11 +364,11 @@ newCustomer <- createCustomer(customerDataset,
                               Churn = "Yes"
                               )
 finalModelPredicition <- createPrediction_df(finalModel, newCustomer, oneClass = "Yes", zeroClass = "No")
-
+finalModelPredicition
 ```
 ```{r Dummy Customer Discussion, results='asis', echo=F}
 cat(sprintf("       
-The model predicts that a male who has a one year tenure and has a fibre optic internet service will churn, and based on the results from our testing we can say that with a %.2f%% chance of being correct.
+The model predicts that a male who has a one year tenure, streams TV and has a fibre optic internet service will churn, and based on the results from our testing we can say that with a %.2f%% chance of being correct. From an output such as this we would make recommendations to upgrade your fiber network or invest further into your tv streaming service.
 ",finalModelYesAccuracy))
 ```
 
